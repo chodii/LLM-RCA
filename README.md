@@ -28,3 +28,8 @@ python DESExperiments.py -i .\src\DES\DataPreprocessing\out\5000\chunked_inciden
 Use --help for more options.
 Inside the ./out/ folder you will find the experiments results.
 The LOGGER.json result file can be further processed using .\src\DES\DataPreprocessing\Evaluation\Logger.py
+
+### Functionality notes
+You will need to initiate your database, an example which was used is presented in ./src/DES/Database/db_init.sql file. Yet to match the db name, you might need to edit the corresponding files in ./src/DES/Database/ folder (to match your database name, port, and password).
+
+
