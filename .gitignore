@@ -2,4 +2,6 @@
 !*/
 !*.py
 !.gitignore
-!README.txt
+!README.*
+!*.sql
+!*DESAI-tools.json
