@@ -1,71 +1,141 @@
-[
-    {
-        "type": "function",
-        "function": {
-            "name": "record_selector",
-            "description": "Retrieve database records filtered by source path, time interval, exact text pattern, and result limit. Returned has one of following formats: <time> <log_line> OR <time_start> <time_end> <number_of_occurances> <log_line>",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "source_path": {
-                        "type": [
-                            "string",
-                            "null"
-                        ],
-                        "description": "Exact path to the original source file, or null (most likely not known (various file names)->null, usable only if looking for an information from a neighboring chunk)."
-                    },
-                    "start_ts": {
-                        "type": [
-                            "string",
-                            "null"
-                        ],
-                        "description": "Inclusive start timestamp in ISO-8601 format, or null."
-                    },
-                    "end_ts": {
-                        "type": [
-                            "string",
-                            "null"
-                        ],
-                        "description": "Inclusive end timestamp in ISO-8601 format, or null."
-                    },
-                    "similarity_pattern": {
-                        "type": [
-                            "string",
-                            "null"
-                        ],
-                        "description": "Similarity text pattern to match. A great pattern search with a tolerance to small deviations."
-                    },
-                    "exact_pattern": {
-                        "type": [
-                            "string",
-                            "null"
-                        ],
-                        "description": "Please don't use -> keep null in most cases, use this parameter if and only if you have already retrieved data for similarity_pattern! Due to its strictness that leads to discarding all results that strictly (100% match) did not satisfy the exact_pattern, blind use of this exact_pattern is discouraged. Keep the value null if you don't wish to use this parameter."
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum number of records to return.",
-                        "minimum": 1,
-                        "maximum": 20
-                    }
-                },
-                "required": [],
-                "additionalProperties": false
-            }
-        }
-    }
-    ,{
-        "type": "function",
-        "function": {
-            "name": "done",
-            "description": "Call this function to notify me that you are done with your work, such as when you have already collected enough data for the root cause analysis, or if you are not able to find any more details.",
-            "parameters": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": false
-        },
-        "strict": true
-        }
-    }
+[
+
+    {
+
+        "type": "function",
+
+        "function": {
+
+            "name": "record_selector",
+
+            "description": "Retrieve database records filtered by source path, time interval, exact text pattern, and result limit. Returned has one of following formats: <time> <log_line> OR <time_start> <time_end> <number_of_occurances> <log_line>",
+
+            "parameters": {
+
+                "type": "object",
+
+                "properties": {
+
+                    "source_path": {
+
+                        "type": [
+
+                            "string",
+
+                            "null"
+
+                        ],
+
+                        "description": "Exact path to the original source file, or null (most likely not known (various file names)->null, usable only if looking for an information from a neighboring chunk)."
+
+                    },
+
+                    "start_ts": {
+
+                        "type": [
+
+                            "string",
+
+                            "null"
+
+                        ],
+
+                        "description": "Inclusive start timestamp in ISO-8601 format, or null."
+
+                    },
+
+                    "end_ts": {
+
+                        "type": [
+
+                            "string",
+
+                            "null"
+
+                        ],
+
+                        "description": "Inclusive end timestamp in ISO-8601 format, or null."
+
+                    },
+
+                    "similarity_pattern": {
+
+                        "type": [
+
+                            "string",
+
+                            "null"
+
+                        ],
+
+                        "description": "Similarity text pattern to match. A great pattern search with a tolerance to small deviations."
+
+                    },
+
+                    "exact_pattern": {
+
+                        "type": [
+
+                            "string",
+
+                            "null"
+
+                        ],
+
+                        "description": "Please don't use -> keep null in most cases, use this parameter if and only if you have already retrieved data for similarity_pattern! Due to its strictness that leads to discarding all results that strictly (100% match) did not satisfy the exact_pattern, blind use of this exact_pattern is discouraged. Keep the value null if you don't wish to use this parameter."
+
+                    },
+
+                    "limit": {
+
+                        "type": "integer",
+
+                        "description": "Maximum number of records to return.",
+
+                        "minimum": 1,
+
+                        "maximum": 20
+
+                    }
+
+                },
+
+                "required": [],
+
+                "additionalProperties": false
+
+            }
+
+        }
+
+    }
+
+    ,{
+
+        "type": "function",
+
+        "function": {
+
+            "name": "done",
+
+            "description": "Call this function to notify me that you are done with your work, such as when you have already collected enough data for the root cause analysis, or if you are not able to find any more details.",
+
+            "parameters": {
+
+            "type": "object",
+
+            "properties": {},
+
+            "required": [],
+
+            "additionalProperties": false
+
+        },
+
+        "strict": true
+
+        }
+
+    }
+
 ]
