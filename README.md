@@ -42,16 +42,16 @@ python -m rca.data_preprocessing.chunking.AllChunker -r C:\Datasets\dataset\ -d 
 ## Assess potential performance achievable from the dataset
 As running experiments does some evaluation in the process, a potential performance needs to be assessed by analyzing the coverage between the reference (target) RCA and the dataset.
 ```
-python -m rca.ai_agent.experiments.DESExperiments -i ./out/5000/chunked_incidents.json -a
+python -m rca.ai_agent.experiments.DESExperiments -i ./out/3000/chunked_incidents.json -a
 ```
 
 ## Run on validation set (20% of the dataset)
-Don't burn your tokens mindlessly, try on a subset of the dataset:
+Don't burn your tokens recklessly, try on a subset of the dataset:
 ```
-python -m rca.ai_agent.experiments.DESExperiments -i ./out/5000/chunked_incidents.json -s -v
+python -m rca.ai_agent.experiments.DESExperiments -i ./out/3000/chunked_incidents.json -s -v
 ```
 
 ## Run on the remaining 80% of the dataset
 ```
-python -m rca.ai_agent.experiments.DESExperiments -i ./out/5000/chunked_incidents.json -s
+python -m rca.ai_agent.experiments.DESExperiments -i ./out/3000/chunked_incidents.json -s
 ```
