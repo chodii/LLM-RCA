@@ -1,8 +1,8 @@
-# Agentic RCA
+	# Agentic RCA
 
 LLM-based agent for multi-artifact Root Cause Analysis (RCA) of issues in railway-vehicle
 log files — the codebase behind the master's thesis *"LLM for Multi-Artifact Root Cause
-Analysis of Issues"* (`docs/main-code-comments.pdf`).
+Analysis of Issues"*.
 
 ## Install
 
