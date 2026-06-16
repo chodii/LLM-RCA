@@ -1,0 +1,14 @@
+# Best-effort dependency list (mirrors pyproject.toml [project.dependencies]).
+# Gathered by scanning imports under src/rca. Pin versions before any reproducible run.
+openai
+requests
+psycopg2-binary
+pytz
+numpy
+matplotlib
+openpyxl
+py7zr
+datasets
+langchain-text-splitters
+nltk
+rouge-score

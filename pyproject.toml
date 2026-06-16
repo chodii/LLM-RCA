@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rca"
+version = "0.1.0"
+description = "LLM-based agent for multi-artifact Root Cause Analysis of issues (master's thesis codebase)"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Jan Chodora" }]
+
+# NOTE: best-effort dependency list, gathered by scanning imports under src/rca.
+# Versions are intentionally unpinned — pin them before any reproducible run.
+dependencies = [
+    "openai",
+    "requests",
+    "psycopg2-binary",
+    "pytz",
+    "numpy",
+    "matplotlib",
+    "openpyxl",
+    "py7zr",
+    "datasets",
+    "langchain-text-splitters",
+    "nltk",
+    "rouge-score",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# ship the agent's prompt/tool JSON schemas with the package
+"rca.ai_agent.prompt_engineering" = ["*.json"]

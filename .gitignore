@@ -6,3 +6,5 @@
 !*.sql
 !*DESAI-tools.json
 !*DESAI-prompts.json
+!pyproject.toml
+!requirements.txt
