@@ -3,6 +3,8 @@
 LLM-based agent for multi-artifact Root Cause Analysis (RCA) of issues in railway-vehicle
 log files — the codebase behind the master's thesis *"LLM for Multi-Artifact Root Cause
 Analysis of Issues"*.
+Be aware: **This code is built towards a specific non-public dataset.**
+The dataset this code was adapted to contains various log files from a distributed embedded system.
 
 ## Install
 
