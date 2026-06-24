@@ -14,6 +14,31 @@ From the repository root:
 pip install -e .
 ```
 
+## Environment variables
+
+The RCA agent and database loader/fetcher expect these environment variables to be set:
+
+```
+$env:OPENROUTER="your-openrouter-api-key"
+$env:MONLIS_DBNAME="monlis"
+$env:MONLIS_USER="chody"
+$env:MONLIS_DB_PSW="your-postgres-password"
+```
+
+## Database setup
+
+Create the PostgreSQL database and user first if they do not already exist:
+
+```
+createuser --pwprompt $env:MONLIS_USER
+createdb -O $env:MONLIS_USER $env:MONLIS_DBNAME
+```
+
+Before loading chunks or running the RCA agent, initialize the PostgreSQL schema with:
+
+```
+psql -U $env:MONLIS_USER -d $env:MONLIS_DBNAME -f src/rca/ai_agent/knowledge_base/db_init.sql
+```
 
 ## Unpack
 If you work with the raw dataset, it contains many archives, often recursively compressed, unpack them automatically using:

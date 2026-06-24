@@ -37,9 +37,9 @@ DB_CONFIG = {
 
     "port": 5432,
 
-    "dbname": "monlis",
+    "dbname": os.environ["MONLIS_DBNAME"],
 
-    "user": "chody",
+    "user": os.environ["MONLIS_USER"],
 
     "password": os.environ["MONLIS_DB_PSW"],
 
