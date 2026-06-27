@@ -289,7 +289,7 @@ def extract_time_relevant_events(root, time_start, time_end, INCLUDE_STATIC_FILE
 
     
 
-def extract_subset_plain(root, time_end, time_start, dest="C:\\Datasets\\processed\\monlis_"):
+def extract_subset_plain(root, time_end, time_start, dest="C:\\Datasets\\processed\\DESAI_"):
 
     if time_start is None or time_end is None:
 
