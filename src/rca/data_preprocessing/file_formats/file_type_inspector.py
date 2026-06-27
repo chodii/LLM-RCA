@@ -34,19 +34,20 @@ def find_existing(root, ft, amount=10):
 
             if size > 0:
 
-                with open(fp, "r") as f:
+                with open(fp, "rb") as f:
+                    peek_bytes = f.read(amount)
 
-                    peek = f.read(amount)
+                peek = peek_bytes.decode("utf-8", errors="replace")
 
-                print("\n"+peek, "\t", size, "\t", fp[len(root):])
+                print("\n" + peek, "\t", size, "\t", fp[len(root):])
 
             else:
 
                 empty += 1
-
+                
     print("-"*10)
 
-    print(found, "files matched\t out of which", empty, "were empty")
+    print(found, "files matched with considered suffixes\t out of which", empty, "were none")
 
 import argparse
 

@@ -117,7 +117,7 @@ def api(context_manager, incidents_json, chunk_size ,model, VALIDATION=False):
 
         evaluator.evaluate(incident, rca, retrieved, rounds)
 
-    evaluator.log_results(logger.res_folder+res_name, res_name)
+    evaluator.log_results(logger.res_folder, res_name)
 
 
 

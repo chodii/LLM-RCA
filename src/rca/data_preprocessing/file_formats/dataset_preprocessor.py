@@ -178,7 +178,11 @@ class DataPreprocessor():
 if __name__ == "__main__":
 
     proc = DataPreprocessor()
-
-    proc.process("C:\\Datasets\\DESu\\")
+    
+    if len(sys.argv) < 2:
+        print("Usage: run with <root_directory> parameter")
+        sys.exit(1)
+    root = sys.argv[1]
+    proc.process(root)
 
     

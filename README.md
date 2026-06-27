@@ -82,3 +82,67 @@ python -m rca.ai_agent.experiments.DESExperiments -i ./out/3000/chunked_incident
 ```
 python -m rca.ai_agent.experiments.DESExperiments -i ./out/3000/chunked_incidents.json -s
 ```
+
+
+
+Explore file formats within the dataset:
+```
+python -m rca.data_preprocessing.file_formats.data_overview C:\Datasets\MonLis
+```
+
+View the portion of various file formats within the dataset:
+```
+python -m rca.data_preprocessing.file_formats.data_type_analysis C:\Datasets\MonLis
+```
+
+xxx python -m rca.data_preprocessing.file_formats.file_type_inspector -r C:\Datasets\MonLis -i "None" -a 10
+
+Inspect the counts of various file formats across the dataset:
+python -m rca.data_preprocessing.file_formats.list_files_types -r C:\Datasets\MonLis
+
+## Side Tools
+Generate a tree for further visualization from the dataset up to a depth X:
+```
+python -m rca.data_preprocessing.file_formats.dataset_folder_depth C:\Datasets\MonLis 3
+```
+This generate a .dot file, which can be afterwards transformed into an svg via external dot tool (you will probably need to install this one):
+```
+dot -Tsvg tree.dot -o tree.svg
+```
+
+If you want to make sure you treat appropriately all archives you can unpack them iteratively and afterwards check the file formats:
+Unpack iteratively:
+```
+python -m rca.data_preprocessing.dataset_acquisition.data_unpack_cross_checker --root C:\Datasets\rest\DatasetRaw --rounds 10
+```
+
+Inspect all unique file format combinations:
+```
+python -m rca.data_preprocessing.file_formats.unique_archives C:\Datasets\rest\DatasetRaw_unpacked\
+```
+
+Inspect all unique file formats:
+```
+python -m rca.data_preprocessing.file_formats.unique_ff C:\Datasets\rest\DatasetRaw_unpacked\
+```
+
+Inspection of times within the dataset:
+```
+python -m rca.data_preprocessing.file_formats.dataset_preprocessor C:\Datasets\MonLis
+```
+
+## Visualizations
+Plot timestamps from the dataset:
+```
+python -m rca.data_preprocessing.timestamps_incidents.plotting_gather_time_staps C:\Datasets\dataset
+```
+
+Histogram of incident timestamps:
+```
+python -m rca.data_preprocessing.timestamps_incidents.time_stamps C:\Datasets\dataset_processed\
+```
+
+Visualize the results of your experiments:
+```
+python -m rca.results.proc_results -r .\out\chunked_3000\20260627_125921--VALIDATION_results\20260627_132710--VALIDATION_results.json
+```

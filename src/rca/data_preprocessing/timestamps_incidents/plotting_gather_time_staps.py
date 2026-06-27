@@ -35,11 +35,11 @@ years = None
 
 
 
-def gather_data_for_plot(spec_files_only, incl_stat_f):
+def gather_data_for_plot(spec_files_only, incl_stat_f, root = "C:\\Datasets\\MonLis"):
 
     
 
-    root = "C:\\Datasets\\MonLis"
+    
 
     time_start = datetime(1900,3,10,21,40,16,tzinfo=timezone.utc)
 
@@ -86,9 +86,12 @@ def gather_data_for_plot(spec_files_only, incl_stat_f):
     return years
 
 
+import sys
 
 def main():
-
+    root = "C:\\Datasets\\MonLis"
+    if len(sys.argv) > 1:
+        root = sys.argv[1]
     global years
 
     import matplotlib as mtl
@@ -149,7 +152,7 @@ def main():
 
             print("\n",tag)
 
-            years = gather_data_for_plot(spec_files_only=files, incl_stat_f=stat_f)
+            years = gather_data_for_plot(spec_files_only=files, incl_stat_f=stat_f, root = root)
 
             if len(years) == 0:
 

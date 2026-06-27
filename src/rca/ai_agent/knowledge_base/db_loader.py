@@ -50,33 +50,31 @@ DB_CONFIG = {
 from datetime import datetime
 
 def _select_time_span(content):
-
     t0 = None
-
     t1 = None
 
-    if content[-1][0] is not None:# if any has, the last will have
+    for entry in content:
+        if len(entry) < 2:
+            continue
 
-        for i in range(len(content)):
+        start = entry[0]
+        end = entry[0] if len(entry) == 2 else entry[1]
+        if not isinstance(start, str) or not isinstance(end, str):
+            continue
 
-            dt_start = datetime.fromisoformat(content[i][0])
+        dt_start = datetime.fromisoformat(start)
+        dt_end = datetime.fromisoformat(end)
 
-            dt_end = datetime.fromisoformat(content[i][0] if len(content[i])==2 else content[i][1])
+        if t0 is None or t0 > dt_start:
+            t0 = dt_start
 
-            if t0 is None or t0>dt_start:
-
-                t0 = dt_start
-
-            if t1 is None or t1<dt_end:
-
-                t1 = dt_end
+        if t1 is None or t1 < dt_end:
+            t1 = dt_end
 
     if t0 is not None:
-
         t0 = t0.isoformat()
 
     if t1 is not None:
-
         t1 = t1.isoformat()
 
     return t0, t1
@@ -157,7 +155,7 @@ def parse_record(obj: dict) -> Optional[dict]:
 
         "time_end": t1,
 
-        "has_time": content[-1][0] is not None
+        "has_time": t0 is not None
 
     }
 
