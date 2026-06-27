@@ -20,9 +20,9 @@ The RCA agent and database loader/fetcher expect these environment variables to 
 
 ```
 $env:OPENROUTER="your-openrouter-api-key"
-$env:MONLIS_DBNAME="monlis"
-$env:MONLIS_USER="chody"
-$env:MONLIS_DB_PSW="your-postgres-password"
+$env:DESAI_DBNAME="desaidb"
+$env:DESAI_USER="chody"
+$env:DESAI_DB_PSW="your-postgres-password"
 ```
 
 ## Database setup
@@ -30,14 +30,14 @@ $env:MONLIS_DB_PSW="your-postgres-password"
 Create the PostgreSQL database and user first if they do not already exist:
 
 ```
-createuser --pwprompt $env:MONLIS_USER
-createdb -O $env:MONLIS_USER $env:MONLIS_DBNAME
+createuser --pwprompt $env:DESAI_USER
+createdb -O $env:DESAI_USER $env:DESAI_DBNAME
 ```
 
 Before loading chunks or running the RCA agent, initialize the PostgreSQL schema with:
 
 ```
-psql -U $env:MONLIS_USER -d $env:MONLIS_DBNAME -f src/rca/ai_agent/knowledge_base/db_init.sql
+psql -U $env:DESAI_USER -d $env:DESAI_DBNAME -f src/rca/ai_agent/knowledge_base/db_init.sql
 ```
 
 ## Unpack

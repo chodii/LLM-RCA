@@ -32,11 +32,11 @@ DB_CONFIG = {
 
     "port": 5432,
 
-    "dbname": os.environ["MONLIS_DBNAME"],
+    "dbname": os.environ["DESAI_DBNAME"],
 
-    "user": os.environ["MONLIS_USER"],
+    "user": os.environ["DESAI_USER"],
 
-    "password": os.environ["MONLIS_DB_PSW"],
+    "password": os.environ["DESAI_DB_PSW"],
 
 }
 
