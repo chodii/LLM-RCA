@@ -139,7 +139,7 @@ def incident_distribution_from_folders(root_folder, show=False):
 
 import sys
 def main():
-    root = f"C:\Datasets\mon-lis-PROCESSED"
+    root = None
     if len(sys.argv) >= 2:
         root = sys.argv[1]
     print("Processing ", root)

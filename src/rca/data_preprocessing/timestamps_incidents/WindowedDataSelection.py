@@ -375,7 +375,7 @@ def extract_subset_json(root, time_end, time_start, dest, INCLUDE_STATIC_FILES):
 
 def main():
 
-    root = "C:\\Datasets\\MonLis\\CRO_NOSS_Example\\"
+    root = "C:\\Datasets\\dataset\\"
 
     #time_end = datetime(2021,11,3,11,25,16,tzinfo=timezone.utc)
 
