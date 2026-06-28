@@ -333,7 +333,7 @@ def parse_args():
 
     if time_file is None:
 
-        time_file = Matchmaker.api(root=args.root, xlsx_file=args.xlsx_file)#root = "C:\\Datasets\\MonLis\\"
+        time_file = Matchmaker.api(root=args.root, xlsx_file=args.xlsx_file)
 
     return args.root, args.dest, time_file, args.det_anom, args.line_analysis, args.chunk_max
 

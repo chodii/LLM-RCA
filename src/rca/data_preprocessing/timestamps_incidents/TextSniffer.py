@@ -85,7 +85,7 @@ def find_events(text
 import sys
 def main():
 
-    root = "C:\\Datasets\\MonLis\\"
+    root = "C:\\Datasets\\dataset\\"
     if len(sys.argv) >= 2:
         root = sys.argv[1]
     print("Searching in ", root)

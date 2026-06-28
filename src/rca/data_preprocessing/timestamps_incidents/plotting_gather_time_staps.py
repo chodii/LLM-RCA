@@ -35,7 +35,7 @@ years = None
 
 
 
-def gather_data_for_plot(spec_files_only, incl_stat_f, root = "C:\\Datasets\\MonLis"):
+def gather_data_for_plot(spec_files_only, incl_stat_f, root = "C:\\Datasets\\dataset\\"):
 
     
 
@@ -89,7 +89,7 @@ def gather_data_for_plot(spec_files_only, incl_stat_f, root = "C:\\Datasets\\Mon
 import sys
 
 def main():
-    root = "C:\\Datasets\\MonLis"
+    root = "C:\\Datasets\\dataset\\"
     if len(sys.argv) > 1:
         root = sys.argv[1]
     global years
