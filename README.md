@@ -1,8 +1,7 @@
-# Agentic RCA
+# Agentic Evidence Gathering to Support RCA
 
-LLM-based agent for multi-artifact Root Cause Analysis (RCA) of issues in railway-vehicle
-log files — the codebase behind the master's thesis *"LLM for Multi-Artifact Root Cause
-Analysis of Issues"*.
+LLM-based agent for multi-artifact evidence gathering to support Root Cause Analysis (RCA) of issues in railway-vehicle software
+log files — the codebase behind the master's thesis *"AGENTIC MULTI-ARTIFACT EVIDENCE GATHERING FOR ROOT CAUSE ANALYSIS IN THE RAILWAY VEHICLE SOFTWARE DOMAIN"*.
 Be aware: **This code is built towards a specific non-public dataset.**
 The dataset this code was adapted to contains various log files from a distributed embedded system.
 
@@ -12,6 +11,11 @@ From the repository root:
 
 ```
 pip install -e .
+```
+
+You will also need to run once:
+```
+python -m run_once.py
 ```
 
 ## Environment variables
@@ -132,18 +136,16 @@ Visualize the results of your experiments:
 python -m rca.results.proc_results -r .\out\chunked_3000\20260627_125921--VALIDATION_results\20260627_132710--VALIDATION_results.json
 ```
 
-### Side tools
-Generate a tree for further visualization from the dataset up to a depth X:
+Or
+
 ```
-python -m rca.data_preprocessing.file_formats.dataset_folder_depth C:\Datasets\dataset 3
-```
-This generate a .dot file, which can be afterwards transformed into an .svg via external dot tool (you will probably need to install this one):
-```
-dot -Tsvg tree.dot -o tree.svg
+python -m rca.results.xBinTable -r ./out/chunked_3000/ --stats -i ./out/chunked_3000 20260915_*--VALIDATION_results/LOGGER.json
 ```
 
-If you want to make sure you treat appropriately all archives you can unpack them iteratively and afterwards check the file formats:
-Unpack iteratively:
+Or if you want to perform more statistically grounded evaluation and visualization, explore main() of
+
 ```
-python -m rca.data_preprocessing.dataset_acquisition.data_unpack_cross_checker --root C:\Datasets\rest\DatasetRaw --rounds 10
+python -m rca.results.results_statistics
 ```
+
+
