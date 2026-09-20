@@ -175,7 +175,9 @@ class MessageManager:
         with open(system_prompt_pth, "r", encoding="utf-8") as fp:
 
             self.predefined_prompts = json.load(fp)
-
+            for k in self.predefined_prompts:
+                if "content" in self.predefined_prompts[k]:
+                    self.predefined_prompts[k] = standardize(self.predefined_prompts[k])
         messages = [standardize(self.predefined_prompts[INITIAL_MSG_KEY])]
 
         

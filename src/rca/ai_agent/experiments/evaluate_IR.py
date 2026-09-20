@@ -677,7 +677,8 @@ class target_manager:
 
     
 
-    
+    def get_founds(self):
+        return self.found_lines, self.found_lines2
 
     def result(self):
 

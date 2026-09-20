@@ -214,9 +214,12 @@ def chunk_dataset(src, dest, max_chunk_len, LIMIT_CONTENT, CHUNKING=Chunking.LAN
     llines_orig = []
 
     llines_dedu = []
-
+    print("\tchunk", end="")
+    i = 0
+    print(src)
     for fp in walker.dataset_iterator(src):
-
+        i += 1
+        print("\t_"+str(i)+"_", end="")
         if ".json" not in fp:
 
             continue

@@ -155,7 +155,7 @@ def run_rca(user_problem: str, tool_schemas, system_prompt_pth
 
     displatcher = DB_Tools()
 
-    messanger = message_manager.MessageManager(
+    messager = message_manager.MessageManager(
 
                 db_manager = displatcher
 
@@ -169,33 +169,38 @@ def run_rca(user_problem: str, tool_schemas, system_prompt_pth
 
                  )
 
-    messanger.init_problem(user_problem=user_problem)
+    messager.init_problem(user_problem=user_problem)
 
     usages = []
 
     while True:
 
-        if messanger.force_end:
+        if messager.force_end:
 
             break
 
-        if messanger.about_to_end:
+        if messager.about_to_end:
 
             tool_schemas = None# I want you to talk --> therefore no tools
 
-        conversation = messanger.get_messages()
+        conversation = messager.get_messages()
 
         log_message(conversation, res_dest=res_dest)
+        try:
+            usage, assistant_message = gpt_connector.ask_open_router(messages=conversation
 
-        usage, assistant_message = gpt_connector.ask_open_router(messages=conversation
+                                                , tools=tool_schemas, model=model)
 
-                                             , tools=tool_schemas, model=model)
+            usages.append(usage)
+            messager.add_response(assistant_message)
+        except Exception as err:
+            messager._messages.pop()
+            messager.about_to_end = True
+            print(str(err))
 
-        usages.append(usage)
 
-        messanger.add_response(assistant_message)
 
-    return assistant_message, messanger._messages, [messanger.iteration, json.dumps(usages, default=str)], messanger.get_retrieved_from_chunks(), conversation
+    return assistant_message, messager._messages, [messager.iteration, json.dumps(usages, default=str)], messager.get_retrieved_from_chunks(), conversation
 
 
 
@@ -247,9 +252,9 @@ def api(user_problem
 
     with open(result_log, mode="w", encoding="utf-8") as fp:
 
-        json.dump({"messages":messages, "usages":usages}, fp, default=str)
+        json.dump({"messages":messages, "usages":usages[0]}, fp, default=str)
 
-    return rca, retrieved, usages[0], _conversation
+    return rca, retrieved, usages, _conversation
 
 
 

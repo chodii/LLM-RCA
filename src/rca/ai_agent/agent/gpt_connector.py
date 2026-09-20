@@ -46,7 +46,7 @@ import json
 
 import time
 
-def ask_open_router(messages, tools=None, timer=0.5, model="openai/gpt-4o-mini"):
+def ask_open_router(messages, tools=None, timer=0.11, model="openai/gpt-4o-mini"):
 
     time.sleep(timer)
 

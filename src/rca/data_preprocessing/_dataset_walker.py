@@ -43,7 +43,6 @@ def dataset_crude_iterator(root: Path):
         for filename in files:
 
             fp = os.path.join(current_dir, filename)
-
             if not os.path.isfile(fp):
 
                 continue
@@ -65,8 +64,8 @@ def iter_spec_files(root: Path, ext="json") -> Iterable[Path]:
 
 
 def parse_suffixes(fp):
-
-    dirs = fp.split("\\")
+    dirs = fp.replace("\\", "/")
+    dirs = dirs.split("/")
 
     if len(dirs) == 1:
 

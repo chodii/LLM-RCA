@@ -103,9 +103,12 @@ def api(incidents_json, chunking, dest, tag):
 
     incident_all_relevant_files = {}
 
+    found_lines = []
+    found_lines_2 = []
+
     for i,incident in enumerate(IssueLoader.load_incidents(incidents_json=incidents_json
 
-                                                           , chunk_size=chunking, OUT=dest
+                                                           , OUT=dest
 
                                                            , ignore_cov_file=True)):
 
@@ -150,6 +153,9 @@ def api(incidents_json, chunking, dest, tag):
         line_lnes_new.append(new_line_len)# line exact
 
         line_2_lnes_new.append(new_len_line_target_2)# line contained
+        found_lines.append(target_manager.get_founds()[0])
+        found_lines_2.append(target_manager.get_founds()[1])
+
 
     # printing:
 
@@ -160,6 +166,7 @@ def api(incidents_json, chunking, dest, tag):
     hist.hist_from_array_single(word_lens_orig, x="Length of target output", y="Count", title="Length of target [words]", dest=dest)
 
     hist.hist_from_array_single(line_lens_oring, x="Length of target output", y="Count", title="Length of target [lines]", dest=dest)
+
 
     char_cov = coverage_analysis(lens_orig, lens_new, "character", dest=dest)
 
@@ -181,7 +188,11 @@ def api(incidents_json, chunking, dest, tag):
 
                         ,"characters":char_cov
 
-                        , "words":word_cov} }, fp)
+                        , "words":word_cov} 
+
+                    , "found_lines": found_lines
+
+                    , "found_lines_2": found_lines_2}, fp)
 
     print("results saved into:", dest)
 

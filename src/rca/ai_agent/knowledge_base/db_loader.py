@@ -88,9 +88,11 @@ from typing import Any
 
 
 def clear_str(content:str):
-
-    return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", content)
-
+    #content= re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", content)
+    #content = content.strip()
+    content = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]+", " ", content)
+    content = content.strip()
+    return content
 
 
 def parse_record(obj: dict) -> Optional[dict]:
@@ -126,7 +128,6 @@ def parse_record(obj: dict) -> Optional[dict]:
     cont_new = []
 
     for cont in content:
-
         cont_new.append([cont[0], clear_str(cont[-1])])
 
     content = cont_new

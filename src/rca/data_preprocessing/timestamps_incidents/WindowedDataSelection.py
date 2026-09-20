@@ -264,9 +264,7 @@ def extract_time_relevant_events(root, time_start, time_end, INCLUDE_STATIC_FILE
             , time_end       = time_end
 
         )
-
     for current_dir, filename in walker.dataset_crude_iterator(root):
-
         print('\r', ExtractorLog.STATISTICS_COUNTER, end="")
 
         res = DP.process(current_dir, filename)
@@ -289,7 +287,7 @@ def extract_time_relevant_events(root, time_start, time_end, INCLUDE_STATIC_FILE
 
     
 
-def extract_subset_plain(root, time_end, time_start, dest="C:\\Datasets\\processed\\DESAI_"):
+def extract_subset_plain(root, time_end, time_start, dest="./"):
 
     if time_start is None or time_end is None:
 
@@ -303,7 +301,7 @@ def extract_subset_plain(root, time_end, time_start, dest="C:\\Datasets\\process
 
     
 
-    dest = dest+time_start.isoformat()[:10]+"\\"
+    dest = dest+time_start.isoformat()[:10]+"/"
 
     os.makedirs(dest, exist_ok=True)
 
@@ -375,7 +373,7 @@ def extract_subset_json(root, time_end, time_start, dest, INCLUDE_STATIC_FILES):
 
 def main():
 
-    root = "C:\\Datasets\\dataset\\"
+    root = "C:/Datasets/dataset/"
 
     #time_end = datetime(2021,11,3,11,25,16,tzinfo=timezone.utc)
 

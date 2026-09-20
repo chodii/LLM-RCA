@@ -20,44 +20,67 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
+import statistics
 import os
 
+def plot_radar_generic(dicts, labels, title, dest, show=False):
+    # Ensure both dictionaries have the same keys
+    labels_i = list(dicts[0].keys())
+    angles = np.linspace(0, 2 * np.pi, len(labels_i), endpoint=False).tolist()
+    angles += angles[:1]
+    fig, ax = plt.subplots(figsize=(7, 7), subplot_kw=dict(polar=True))
+    for i in range(len(dicts)):
+        values_i = [dicts[i][k] for k in labels_i]
+        # Close the radar loop by repeating the first value
+        values_i += values_i[:1]
+        # Angles for each axis
+        ax.plot(angles, values_i, linewidth=2, label=labels[i])
+        ax.fill(angles, values_i, alpha=0.25)
+
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels_i)
+    import textwrap
+    wrapped_title = "\n".join(textwrap.wrap(title, width=65))
+
+    fig.text(
+        0.5, 0.97,
+        wrapped_title,
+        ha="center",
+        va="top",
+        fontsize=12
+    )
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.12),
+        ncol=2
+    )
+    ax.grid(True)
+    plt.tight_layout(rect=[0, 0, 1, 0.90])
+    safename = title.replace(" ", "").replace("'s","")
+    dest = dest+safename
+    plt.savefig(fname=dest+".pdf")
+    if show:
+        plt.show()
 
 
 def plot_radar(dict_a, dict_b, label_a, label_b, title, dest, show=False):
-
     # Ensure both dictionaries have the same keys
-
-    if set(dict_a.keys()) != set(dict_b.keys()):
-
+    if dict_b and set(dict_a.keys()) != set(dict_b.keys()):
         raise ValueError("Both dictionaries must have the same keys.")
-
-
-
     labels = list(dict_a.keys())
 
-
-
     values_a = [dict_a[k] for k in labels]
-
-    values_b = [dict_b[k] for k in labels]
-
-
+    if dict_b:
+        values_b = [dict_b[k] for k in labels]
 
     # Close the radar loop by repeating the first value
-
     values_a += values_a[:1]
-
-    values_b += values_b[:1]
-
-
+    if dict_b:
+            values_b += values_b[:1]
 
     # Angles for each axis
-
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
-
     angles += angles[:1]
-
 
 
     fig, ax = plt.subplots(figsize=(7, 7), subplot_kw=dict(polar=True))
@@ -65,45 +88,35 @@ def plot_radar(dict_a, dict_b, label_a, label_b, title, dest, show=False):
 
 
     ax.plot(angles, values_a, linewidth=2, label=label_a)
-
     ax.fill(angles, values_a, alpha=0.25)
-
-
-
-    ax.plot(angles, values_b, linewidth=2, label=label_b)
-
-    ax.fill(angles, values_b, alpha=0.25)
-
-
+    if dict_b:
+        ax.plot(angles, values_b, linewidth=2, label=label_b)
+        ax.fill(angles, values_b, alpha=0.25)
 
     ax.set_xticks(angles[:-1])
-
     ax.set_xticklabels(labels)
+    import textwrap
+    wrapped_title = "\n".join(textwrap.wrap(title, width=65))
 
-
-
-    ax.set_title(title, pad=20)
-
-    ax.legend(loc="upper right", bbox_to_anchor=(1.25, 1.1))
-
-
-
+    fig.text(
+        0.5, 0.97,
+        wrapped_title,
+        ha="center",
+        va="top",
+        fontsize=12
+    )
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.12),
+        ncol=2
+    )
     ax.grid(True)
-
-
-
-    plt.tight_layout()
-
+    plt.tight_layout(rect=[0, 0, 1, 0.90])
     safename = title.replace(" ", "").replace("'s","")
-
     dest = dest+safename
-
     plt.savefig(fname=dest+".pdf")
-
     if show:
-
         plt.show()
-
 
 
 
@@ -182,7 +195,6 @@ def flatten(arr_a, NORMALIZED):
 
 
 
-import statistics
 
 def show_separate(ret_comp, agent_comp, NORMALIZED, dest):
 

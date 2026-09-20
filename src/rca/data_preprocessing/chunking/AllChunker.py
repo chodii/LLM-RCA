@@ -12,6 +12,7 @@ Created on Tue Apr 14 00:17:42 2026
 
 import os
 
+from posixpath import split
 import sys
 
 
@@ -38,20 +39,13 @@ from rca.data_preprocessing.line_lengths import line_lengths_hists
 from rca.ai_agent.experiments import evaluate_IR
 
 MIN_SCORE = 8
-
 def get_incident_root(root, match, ts, DEPTH=3):
+    srcpth = match.get("source_path", "").replace("\\", "/")
 
-    root_parts = match.get("source_path").replace(root, "").split("\\")
+    # source_path is relative to the dataset root.
+    parts = [p for p in srcpth.split("/") if p]
 
-    incident_root = root
-
-    for i in range(min(DEPTH, len(root_parts))):
-
-        incident_root = os.path.join(incident_root, root_parts[i]+"\\")
-
-    #print("\rsearching", incident_root,  str(datetime.fromisoformat(ts)),end="")
-
-    return incident_root
+    return os.path.join(root, *parts[:DEPTH])
 
 
 

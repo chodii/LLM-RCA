@@ -226,7 +226,6 @@ def api(root, dest
     dest, winsel_dest = decide_destination(dest,ts_mark, time_start, time_end)
 
     if override or (not os.path.exists(dest)):
-
         #print("Selecting\n")
 
         #winsel_dest = 
@@ -240,6 +239,8 @@ def api(root, dest
                                                 , dest=winsel_dest
 
                                                 , INCLUDE_STATIC_FILES=INCLUDE_STATIC_FILES)#                                            
+    else:
+        print("\texists", end="")
 
     if anom_detect:
 

@@ -73,7 +73,7 @@ SHEET_MAP = {
 
 
 
-def load_incidents(incidents_json, chunk_size, OUT, ignore_cov_file = False):#="out/chunked_"
+def load_incidents(incidents_json, OUT, ignore_cov_file = False):#="out/chunked_"
 
     incidents = None
 
@@ -97,7 +97,10 @@ def load_incidents(incidents_json, chunk_size, OUT, ignore_cov_file = False):#="
 
                                        , "score":{k:cover_anal["coverage"][k][i] for k in cover_anal["coverage"]}
 
-                                       , "files_all":cover_anal["files_all"][ts]}
+                                       , "files_all":cover_anal["files_all"][ts]
+
+                                       , "found_lines":cover_anal["found_lines"][i]
+                                       , "found_lines_2":cover_anal["found_lines_2"][i]}
 
     for k in incidents:
 
@@ -210,9 +213,11 @@ class Incident:
         self._target_chunks_all = None
 
         self._target_score = None
-
+        
         self.target_times = []# not used yet
 
+        self.line2_exact=None
+        self.line_contained=None
 
 
     
@@ -276,6 +281,8 @@ class Incident:
         self._target_chunks_all = []
 
         load_target_chunk_info(target_files_all, self._target_chunks_all)
+        self.line_contained = rel_chunks["found_lines"]
+        self.line2_exact = rel_chunks["found_lines_2"]
 
     
 
