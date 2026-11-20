@@ -1,151 +1,26 @@
-# Agentic Evidence Gathering to Support RCA
+# Running an experiment campaign
 
-LLM-based agent for multi-artifact evidence gathering to support Root Cause Analysis (RCA) of issues in railway-vehicle software
-log files — the codebase behind the master's thesis *"AGENTIC MULTI-ARTIFACT EVIDENCE GATHERING FOR ROOT CAUSE ANALYSIS IN THE RAILWAY VEHICLE SOFTWARE DOMAIN"*.
-Be aware: **This code is built towards a specific non-public dataset.**
-The dataset this code was adapted to contains various log files from a distributed embedded system.
+Use a Python environment with the project dependencies installed. Configure
+PostgreSQL and prepare a chunked incident JSON file before starting.
 
-## Install
+Set `OPENAI_API_KEY` in your shell to use OpenAI directly:
 
-From the repository root:
-
-```
-pip install -e .
+```bash
+export OPENAI_API_KEY='your-api-key'
 ```
 
-You will also need to run once:
-```
-python -m run_once.py
+OpenRouter remains the default provider and uses `OPENROUTER`.
+
+From the public copy's root (the directory containing `src/`), run a small
+GPT-4o mini campaign with all three prompt presets and three held-out incidents
+per preset:
+
+```bash
+PYTHONPATH=src python -m rca.ai_agent.experiments.campaign \
+  --name smoke-openai-4o-mini --incidents /path/to/chunked_incidents.json \
+  --provider openai --model gpt-4o-mini \
+  --repetitions 1 --incident-limit 3 --budget-usd 2
 ```
 
-## Environment variables
-
-The RCA agent and database loader/fetcher expect these environment variables to be set:
-
-```
-$env:OPENROUTER="your-openrouter-api-key"
-$env:DESAI_DBNAME="desaidb"
-$env:DESAI_USER="chody"
-$env:DESAI_DB_PSW="your-postgres-password"
-```
-
-## Database setup
-
-Create the PostgreSQL database and user first if they do not already exist:
-
-```
-createuser --pwprompt $env:DESAI_USER
-createdb -O $env:DESAI_USER $env:DESAI_DBNAME
-```
-
-Before loading chunks or running the RCA agent, initialize the PostgreSQL schema with:
-
-```
-psql -U $env:DESAI_USER -d $env:DESAI_DBNAME -f src/rca/ai_agent/knowledge_base/db_init.sql
-```
-
-## Unpack
-If you work with the raw dataset, it contains many archives, often recursively compressed, unpack them automatically using:
-```
-python -m rca.data_preprocessing.dataset_acquisition.data_unpack C:\Datasets\OriginalFolderWithArchives\ C:\Datasets\dataset\ --delete-archives
-```
-
-## Identify issues
-Use my dataset-specific issue identification:
-```
-python -m rca.data_preprocessing.timestamps_incidents.TextSniffer C:\Datasets\dataset\
-```
-
-## Connect identified issues with those known previously
-Connect issues identified in the previous step with those listed in the .xlsx file exported from the ticketing system.
-```
-python -m rca.data_preprocessing.evaluation_set.xlsx_main_pipeline_top_compact 'C:\Datasets\dataset\Summary of issues____.xlsx' .\out\events-EMERGENCY-MPSPThreads-Restart.json
-```
-
-## Chunk the dataset
-Transform the raw data into a dataset.
-This is done by selecting for each incident only its relevant log files with relevant log lines, and chunk it to selected size (e.g. 3000 characters):
-```
-python -m rca.data_preprocessing.chunking.AllChunker -r C:\Datasets\dataset\ -d C:\Datasets\dataset_processed\ -c 3000
-```
-
-
-## Assess potential performance achievable from the dataset
-As running experiments does some evaluation in the process, a potential performance needs to be assessed by analyzing the coverage between the reference (target) RCA and the dataset.
-```
-python -m rca.ai_agent.experiments.DESExperiments -i ./out/3000/chunked_incidents.json -a
-```
-
-## Run on validation set (20% of the dataset)
-Don't burn your tokens recklessly, try on a subset of the dataset:
-```
-python -m rca.ai_agent.experiments.DESExperiments -i ./out/3000/chunked_incidents.json -s -v
-```
-
-## Run on the remaining 80% of the dataset
-```
-python -m rca.ai_agent.experiments.DESExperiments -i ./out/3000/chunked_incidents.json -s
-```
-
-# Additional modules
-
-## Dataset analysis
-
-Explore file formats within the dataset:
-```
-python -m rca.data_preprocessing.file_formats.data_overview C:\Datasets\dataset
-```
-
-View the portion of various file formats within the dataset:
-```
-python -m rca.data_preprocessing.file_formats.data_type_analysis C:\Datasets\dataset
-```
-
-Inspect the counts of various file formats across the dataset:
-python -m rca.data_preprocessing.file_formats.list_files_types -r C:\Datasets\dataset
-
-Inspect all unique file format combinations:
-```
-python -m rca.data_preprocessing.file_formats.unique_archives C:\Datasets\rest\DatasetRaw_unpacked\
-```
-
-Inspect all unique file formats:
-```
-python -m rca.data_preprocessing.file_formats.unique_ff C:\Datasets\rest\DatasetRaw_unpacked\
-```
-
-Inspection of times within the dataset:
-```
-python -m rca.data_preprocessing.file_formats.dataset_preprocessor C:\Datasets\dataset
-```
-
-
-## Visualizations
-Plot timestamps from the dataset:
-```
-python -m rca.data_preprocessing.timestamps_incidents.plotting_gather_time_staps C:\Datasets\dataset
-```
-
-Histogram of incident timestamps:
-```
-python -m rca.data_preprocessing.timestamps_incidents.time_stamps C:\Datasets\dataset_processed\
-```
-
-Visualize the results of your experiments:
-```
-python -m rca.results.proc_results -r .\out\chunked_3000\20260627_125921--VALIDATION_results\20260627_132710--VALIDATION_results.json
-```
-
-Or
-
-```
-python -m rca.results.xBinTable -r ./out/chunked_3000/ --stats -i ./out/chunked_3000 20260915_*--VALIDATION_results/LOGGER.json
-```
-
-Or if you want to perform more statistically grounded evaluation and visualization, explore main() of
-
-```
-python -m rca.results.results_statistics
-```
-
-
+Results go to `out/campaigns/smoke-openai-4o-mini/`. Repeat the same command
+to resume. The budget threshold is checked between runs.
