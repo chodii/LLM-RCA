@@ -247,11 +247,11 @@ def assistant_msgs(conversation):
 
 class logger:
 
-    def __init__(self, dest, tag):
+    def __init__(self, dest, tag, exist_ok=True):
 
         self.res_folder = dest+datetime.now().strftime("%Y%m%d_%H%M%S")+"-"+tag.split(".")[0]+"/"
 
-        os.makedirs(self.res_folder, exist_ok=True)
+        os.makedirs(self.res_folder, exist_ok=exist_ok)
 
         self.resname = self.res_folder + LOGGER
 

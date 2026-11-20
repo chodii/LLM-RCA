@@ -27,13 +27,16 @@ from typing import Optional
 
 import psycopg2
 
+from psycopg2 import sql
+
 
 
 
 
 DB_CONFIG = {
 
-    "host": "localhost",
+    # A directory (e.g. /var/run/postgresql) selects the Unix socket.
+    "host": os.environ.get("DESAI_DB_HOST", "localhost"),
 
     "port": 5432,
 
@@ -109,7 +112,7 @@ def parse_record(obj: dict) -> Optional[dict]:
 
         "content": [
 
-            ["2025-03-11T08:18:47.049000+00:00", "<time> Info ..."],
+            ["[TIMESTAMP_A]", "<time> Info ..."],
 
             ...
 
@@ -125,16 +128,24 @@ def parse_record(obj: dict) -> Optional[dict]:
 
     content = obj.get("content")
 
-    cont_new = []
-
-    for cont in content:
-        cont_new.append([cont[0], clear_str(cont[-1])])
-
-    content = cont_new
-
     if source_path is None or chunk_id is None or not content:
 
         return None
+
+    cont_new = []
+
+    for cont in content:
+        # Keep every field of the entry: collapsed records have the form
+        # [time_start, time_end, count, line] and their end time and count
+        # must survive (used by the time filter and shown to the agent).
+        entry = list(cont)
+        if not entry:
+            continue
+        if isinstance(entry[-1], str):
+            entry[-1] = clear_str(entry[-1])
+        cont_new.append(entry)
+
+    content = cont_new
 
     
 
@@ -150,7 +161,9 @@ def parse_record(obj: dict) -> Optional[dict]:
 
         "content_json": json.dumps(content),
 
-        "content_text": source_path+"\n"+flatten_content(content),
+        # Searchable log text only; the path is kept in its own column so that
+        # exact/similarity patterns cannot match on the file name.
+        "content_text": flatten_content(content),
 
         "time_start": t0,
 
@@ -234,16 +247,90 @@ def clear_db(cur):
 
 
 
-def import_dataset(root, clear_first=True):
+def _load_files(cur, root, verbose=True):
 
-    CHUNK_DIR = Path(root)
+    """Insert every chunk file under root (walker order) into log_chunks of the
+    current search_path. A failing record is undone through its own savepoint.
+    Returns (inserted, skipped, skipped_files)."""
 
     inserted = 0
 
     skipped = 0
 
+    skipped_files = []
+
+    for fp in walker.iter_spec_files(Path(root),ext="json"):
+
+        try:
+
+            with fp.open("r", encoding="utf-8") as f:
+
+                obj = json.load(f)
+
+        except Exception as e:
+
+            skipped += 1
+
+            skipped_files.append(str(fp))
+
+            if verbose:
+
+                print(f"\rSkipping {fp}: {e}",end="")
+
+            continue
+
+        rec = parse_record(obj)
+
+        if rec is None:
+
+            skipped += 1
+
+            skipped_files.append(str(fp))
+
+            if verbose:
+
+                print(f"\rSkipping malformed JSON record in: {fp}",end="")
+
+            continue
+
+        cur.execute("SAVEPOINT import_record;")
+
+        try:
+
+            insert_one(cur, rec)
+
+        except Exception as e:
+
+            cur.execute("ROLLBACK TO SAVEPOINT import_record;")
+
+            skipped += 1
+
+            skipped_files.append(str(fp))
+
+            if verbose:
+
+                print(f"\rSkipping {fp}: {e}",end="")
+
+            continue
+
+        cur.execute("RELEASE SAVEPOINT import_record;")
+
+        inserted += 1
+
+        if verbose and inserted % 1000 == 0:
+
+            print(f"\rInserted {inserted} records so far...",end="")
+
+    return inserted, skipped, skipped_files
 
 
+
+def import_dataset(root, clear_first=True):
+
+    # One transaction for the whole swap: other sessions see either the previous
+    # incident or the complete new one. A failing record is undone through its
+    # own savepoint; a full rollback here would also undo the DELETE and earlier
+    # inserts, leaving another incident's chunks in the table.
     with psycopg2.connect(**DB_CONFIG) as conn:
 
         with conn.cursor() as cur:
@@ -252,54 +339,178 @@ def import_dataset(root, clear_first=True):
 
                 clear_db(cur)
 
-            for fp in walker.iter_spec_files(CHUNK_DIR,ext="json"):
+            inserted, skipped, skipped_files = _load_files(cur, root)
 
-                try:
-
-                    with fp.open("r", encoding="utf-8") as f:
-
-                        obj = json.load(f)
-
-
-
-                    rec = parse_record(obj)
-
-                    if rec is None:
-
-                        skipped += 1
-
-                        print(f"\rSkipping malformed JSON record in: {fp}",end="")
-
-                        continue
-
-                    # clean
-
-                    insert_one(cur, rec)
-
-                    inserted += 1
-
-
-
-                    if inserted % 1000 == 0:
-
-                        conn.commit()
-
-                        print(f"\rInserted {inserted} records so far...",end="")
-
-
-
-                except Exception as e:
-
-                    conn.rollback()
-
-                    skipped += 1
-
-                    print(f"\rSkipping {fp}: {e}",end="")
-
-            conn.commit()
+        conn.commit()
 
     print(f"\rDone. Inserted={inserted}, skipped={skipped}",end="")
 
+    if skipped_files:
+
+        print("\nSkipped files:\n  "+"\n  ".join(skipped_files))
+
+    return inserted, skipped
+
+
+
+# ---------------------------------------------------------------------------
+# Per-incident schemas ("cached" mode): every incident folder is loaded once
+# into its own schema inc_<hash>.log_chunks (same table and indexes as
+# db_init.sql) and reused by every run. Queries select it via search_path, so
+# several incidents can be processed at the same time. A schema is rebuilt only
+# when the loading code changes (fingerprint) or the folder changes.
+
+SCHEMA_PREFIX = "inc_"
+
+SCHEMA_DDL = """
+CREATE TABLE log_chunks (
+    id BIGSERIAL PRIMARY KEY,
+    source_path TEXT NOT NULL,
+    chunk_id INTEGER NOT NULL,
+    content_json JSONB NOT NULL,
+    content_text TEXT NOT NULL,
+    time_start TIMESTAMPTZ NULL,
+    time_end TIMESTAMPTZ NULL,
+    has_time BOOLEAN NOT NULL DEFAULT TRUE,
+    CHECK ((has_time = FALSE) OR (has_time = TRUE AND time_start <= time_end)),
+    UNIQUE (source_path, chunk_id)
+);
+CREATE TABLE load_meta (
+    fingerprint TEXT NOT NULL,
+    chunk_folder TEXT NOT NULL,
+    inserted INTEGER NOT NULL,
+    skipped INTEGER NOT NULL,
+    skipped_files JSONB NOT NULL,
+    loaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
+
+SCHEMA_INDEXES = """
+CREATE INDEX log_chunks_source_chunk_idx ON log_chunks (source_path, chunk_id);
+CREATE INDEX log_chunks_start_time_idx ON log_chunks (time_start);
+CREATE INDEX log_chunks_end_time_idx ON log_chunks (time_end);
+CREATE INDEX log_chunks_content_text_trgm_idx ON log_chunks USING GIN (content_text public.gin_trgm_ops);
+"""
+
+
+def loader_fingerprint() -> str:
+
+    """Hash of everything that determines a schema's contents."""
+
+    import hashlib
+    import inspect
+
+    parts = [inspect.getsource(f) for f in (clear_str, parse_record, _select_time_span, flatten_content
+                                            , insert_one, _load_files)]
+
+    return hashlib.sha256("\n".join(parts + [SCHEMA_DDL, SCHEMA_INDEXES]).encode("utf-8")).hexdigest()[:16]
+
+
+def incident_schema_name(root) -> str:
+
+    import hashlib
+
+    return SCHEMA_PREFIX + hashlib.sha1(os.path.abspath(str(root)).encode("utf-8")).hexdigest()[:16]
+
+
+def _schema_ready(cur, schema, fingerprint, root):
+
+    cur.execute("SELECT to_regclass(%s)", (schema + ".load_meta",))
+
+    if cur.fetchone()[0] is None:
+
+        return False
+
+    cur.execute(sql.SQL("SELECT fingerprint, chunk_folder FROM {}.load_meta").format(sql.Identifier(schema)))
+
+    row = cur.fetchone()
+
+    return row is not None and row[0] == fingerprint and row[1] == os.path.abspath(str(root))
+
+
+def ensure_incident_schema(root, verbose=True) -> str:
+
+    """Schema holding the chunks of one incident folder; loaded on first use."""
+
+    schema = incident_schema_name(root)
+
+    fingerprint = loader_fingerprint()
+
+    with psycopg2.connect(**DB_CONFIG) as conn:
+
+        with conn.cursor() as cur:
+
+            if _schema_ready(cur, schema, fingerprint, root):
+
+                return schema
+
+            # Concurrent loaders of the same folder wait here; the second one
+            # then finds the finished schema.
+            cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (schema,))
+
+            if _schema_ready(cur, schema, fingerprint, root):
+
+                return schema
+
+            t0 = datetime.now()
+
+            if verbose:
+
+                print(f"\nLoading {root} into schema {schema} ...")
+
+            cur.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema)))
+
+            cur.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
+
+            cur.execute(sql.SQL("SET LOCAL search_path TO {}, public").format(sql.Identifier(schema)))
+
+            cur.execute(SCHEMA_DDL)
+
+            inserted, skipped, skipped_files = _load_files(cur, root, verbose=verbose)
+
+            cur.execute(SCHEMA_INDEXES)
+
+            cur.execute("INSERT INTO load_meta (fingerprint, chunk_folder, inserted, skipped, skipped_files)"
+                        " VALUES (%s, %s, %s, %s, %s)"
+                        , (fingerprint, os.path.abspath(str(root)), inserted, skipped, json.dumps(skipped_files)))
+
+            cur.execute("ANALYZE log_chunks")
+
+        conn.commit()
+
+    if verbose:
+
+        print(f"\rLoaded {schema}: inserted={inserted}, skipped={skipped} ({(datetime.now()-t0).seconds} s)")
+
+    return schema
+
+
+def preload(incidents_json, split=None, workers=4, verbose=True):
+
+    """Load every incident folder of chunked_incidents.json (optionally only one
+    split) into its schema. I/O-bound, so a few threads help."""
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    with open(incidents_json, encoding="utf-8") as fp:
+
+        incidents = list(json.load(fp).values())
+
+    folders = []
+
+    for i, incident in enumerate(incidents):
+
+        validation = (i % 5 == 0)
+
+        if split is None or (split == "validation") == validation:
+
+            folders.append(incident["chunked_destination"])
+
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+
+        schemas = list(pool.map(lambda f: ensure_incident_schema(f, verbose=verbose), folders))
+
+    return dict(zip(folders, schemas))
 
 
 def flatten_content(content) -> str:
@@ -308,13 +519,25 @@ def flatten_content(content) -> str:
 
     for line in content:
 
+        if not line:
+
+            continue
+
         cnt = line[-1]
 
-        if type(cnt) == list:
+        if isinstance(cnt, str):
 
             fltcnt += cnt+"\n"
 
-        elif type(cnt) == dict:
+        elif isinstance(cnt, list):
+
+            fltcnt += " ".join(str(c) for c in cnt)+"\n"
+
+        elif isinstance(cnt, dict):
+
+            fltcnt += " ".join(f"{k}: {v}" for k, v in cnt.items())+"\n"
+
+        elif cnt is not None:
 
             fltcnt += str(cnt)+"\n"
 
@@ -346,23 +569,47 @@ def parse_args():
 
         type=str,
 
-        help="Path to the root folder"
+        help="Path to one incident's chunk folder: load it into the shared log_chunks table (legacy swap)"
 
     )
 
+    parser.add_argument(
+
+        "--preload",
+
+        metavar="CHUNKED_INCIDENTS_JSON",
+
+        help="Load every incident of the file into its own schema (cached mode), once"
+
+    )
+
+    parser.add_argument("--split", choices=("validation", "heldout"), default=None)
+
+    parser.add_argument("--workers", type=int, default=4, help="Parallel loaders for --preload (default 4)")
+
     args = parser.parse_args()
 
-    root=args.root
+    if (args.root is None) == (args.preload is None):
 
-    return root
+        parser.error("give either -r/--root or --preload")
+
+    return args
 
 
 
 def main():
 
-    root=parse_args()
+    args=parse_args()
 
-    import_dataset(root=root)
+    if args.preload:
+
+        schemas = preload(args.preload, split=args.split, workers=args.workers)
+
+        print(f"\n{len(schemas)} incident schemas ready")
+
+    else:
+
+        import_dataset(root=args.root)
 
 
 

@@ -25,7 +25,10 @@ import numpy as np
 
 class ExperimentsEvaluator:
 
-    def __init__(self):
+    def __init__(self, eval_dir=None):
+
+        # Per-incident evaluation files; None = module default DEST (out/eval/).
+        self.eval_dir = eval_dir
 
         self.metrics = {}
 
@@ -49,7 +52,8 @@ class ExperimentsEvaluator:
 
         # Agent:
 
-        metrics, agent_comparison_metric, _txts = eval_prec_rec(pred=rca, targ=target, potential_scores=potential_scores)
+        metrics, agent_comparison_metric, _txts = eval_prec_rec(pred=rca, targ=target, potential_scores=potential_scores
+                                                                , log_dest=self.eval_dir)
 
         # DB:
 
@@ -297,6 +301,12 @@ def ref_vs_gen(reference:str, generated:str):
 
             gen = gen.strip()
 
+            if len(gen) == 0:
+
+                # "" in ref is always True: blank generated lines used to count
+                # every reference line as recalled (legacy "sublines" metric).
+                continue
+
             rw_gen_words = gen.split(" ")
 
             for word in rw_gen_words:
@@ -415,7 +425,7 @@ def _normlize(txt):
 
 
 
-def eval_prec_rec(pred:str, targ:str, potential_scores:dict):
+def eval_prec_rec(pred:str, targ:str, potential_scores:dict, log_dest=None):
 
     #pred = _normlize(pred)
 
@@ -463,7 +473,7 @@ def eval_prec_rec(pred:str, targ:str, potential_scores:dict):
 
         metrics[k] = rouge_score[k]
 
-    log(over_pred, over_targ, metrics=metrics)
+    log(over_pred, over_targ, metrics=metrics, dest=log_dest)
 
     potential_of_generated = {"words":rcll_words
 
@@ -531,11 +541,13 @@ from datetime import datetime
 
 DEST = "out/eval/"
 
-def log(pred, targ, metrics):
+def log(pred, targ, metrics, dest=None):
 
-    os.makedirs(DEST, exist_ok=True)
+    dest = DEST if dest is None else os.path.join(dest, "")
 
-    result_log = DEST+"e"+datetime.now().strftime("%Y%m%d_%H%M%S")+".json"
+    os.makedirs(dest, exist_ok=True)
+
+    result_log = dest+"e"+datetime.now().strftime("%Y%m%d_%H%M%S_%f")+".json"
 
     obj = {"pred":pred, "targ":targ, "metrics":metrics}
 

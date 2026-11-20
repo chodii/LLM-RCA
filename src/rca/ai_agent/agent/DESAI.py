@@ -37,6 +37,51 @@ import argparse
 
 import json
 
+import time
+
+from pathlib import Path
+
+MAX_API_RETRIES = 3
+
+# Rate limits (429), 5xx, timeouts: more patience (pauses up to 4 min, about
+# 8 min in total) so that parallel workers do not fail incidents.
+MAX_TRANSIENT_RETRIES = 8
+
+MAX_RETRY_DELAY = 240
+
+
+def retry_delay(attempt, retry_after=None):
+
+    """Exponential backoff with jitter; the server's Retry-After wins if longer."""
+
+    import random
+
+    delay = (2 ** attempt) * random.uniform(0.75, 1.25)
+
+    if retry_after is not None:
+
+        delay = max(delay, float(retry_after))
+
+    return min(delay, MAX_RETRY_DELAY)
+
+DEFAULT_MAX_ITER = 30
+
+PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompt_engineering"
+
+
+def resolve_prompt_path(pth):
+
+    """Absolute/existing paths are used as given; bare names (the historical
+    defaults) are resolved inside the package's prompt_engineering folder."""
+
+    p = Path(pth)
+
+    if p.is_absolute() or p.exists():
+
+        return str(p.resolve())
+
+    return str(PROMPTS_DIR / p)
+
 def parse_args():
 
     parser = argparse.ArgumentParser(
@@ -93,9 +138,10 @@ def extract_params(query):
 
 class DB_Tools:
 
-    def __init__(self):
+    def __init__(self, schema=None):
 
-        ...
+        # Incident schema (cached mode) or None for the shared public.log_chunks.
+        self.schema = schema
 
     
 
@@ -129,7 +175,9 @@ class DB_Tools:
 
                         , limit=1):
 
-        recs = db_fetcher.get_file_time_pattern(source_path
+        with db_fetcher.use_schema(self.schema):
+
+            recs = db_fetcher.get_file_time_pattern(source_path
 
                                   , start_ts
 
@@ -151,9 +199,11 @@ class DB_Tools:
 
 def run_rca(user_problem: str, tool_schemas, system_prompt_pth
 
-            , context_manager, res_dest, model):
+            , context_manager, res_dest, model, max_iter=DEFAULT_MAX_ITER, db_schema=None
+            , provider="openrouter"):
 
-    displatcher = DB_Tools()
+    ask = {"openrouter": gpt_connector.ask_open_router, "openai": gpt_connector.ask_open_ai}[provider]
+    displatcher = DB_Tools(schema=db_schema)
 
     messager = message_manager.MessageManager(
 
@@ -167,40 +217,86 @@ def run_rca(user_problem: str, tool_schemas, system_prompt_pth
 
                  #, model=model
 
+                 , max_iter = max_iter
+
                  )
 
     messager.init_problem(user_problem=user_problem)
 
     usages = []
 
-    while True:
+    assistant_message = {"role": "assistant", "content": ""}
 
-        if messager.force_end:
+    conversation = []
 
-            break
+    consecutive_failures = 0
 
-        if messager.about_to_end:
+    run_info = {"api_errors": [], "failed": False}
 
-            tool_schemas = None# I want you to talk --> therefore no tools
+    while not messager.force_end:
 
         conversation = messager.get_messages()
 
+        # Final answer and summary turns are tool-free.
+        tools = None if (messager.about_to_end or messager.awaiting_summary) else tool_schemas
+
         log_message(conversation, res_dest=res_dest)
+
         try:
-            usage, assistant_message = gpt_connector.ask_open_router(messages=conversation
 
-                                                , tools=tool_schemas, model=model)
+            usage, response = ask(messages=conversation
 
-            usages.append(usage)
-            messager.add_response(assistant_message)
+                                                , tools=tools, model=model)
+
+        except gpt_connector.FatalAPIError:
+
+            # No credits / bad key: every further call fails; stop the experiment.
+            raise
+
         except Exception as err:
-            messager._messages.pop()
-            messager.about_to_end = True
-            print(str(err))
 
+            # Undo only this turn's additions and retry the same turn.
+            messager.rollback_turn()
 
+            consecutive_failures += 1
 
-    return assistant_message, messager._messages, [messager.iteration, json.dumps(usages, default=str)], messager.get_retrieved_from_chunks(), conversation
+            kind = type(err).__name__
+
+            run_info["api_errors"].append({"iteration": messager.iteration, "type": kind, "error": str(err)[:500]})
+
+            print("\nAPI ERROR", consecutive_failures, kind, str(err)[:500])
+
+            if isinstance(err, gpt_connector.RequestTooLargeError):
+
+                # The identical request cannot succeed; retrying only costs time.
+                run_info["failed"] = True
+
+                break
+
+            transient = isinstance(err, gpt_connector.TransientAPIError)
+
+            if consecutive_failures > (MAX_TRANSIENT_RETRIES if transient else MAX_API_RETRIES):
+
+                run_info["failed"] = True
+
+                break
+
+            time.sleep(retry_delay(consecutive_failures, getattr(err, "retry_after", None)))
+
+            continue
+
+        consecutive_failures = 0
+
+        usages.append(usage)
+
+        assistant_message = response
+
+        messager.add_response(assistant_message)
+
+    run_info["summary_tool_call_violations"] = messager.summary_tool_call_violations
+
+    # usages[2] (run_info) is new; Logger.transform only reads usages[1].
+    return assistant_message, messager._messages, [messager.iteration, json.dumps(usages, default=str), run_info], messager.get_retrieved_from_chunks(), conversation
 
 
 
@@ -218,19 +314,30 @@ def api(user_problem
 
         , tools = "DESAI-tools.json"
 
-        , system_prompt_pth = "DESAI-prompts.json"):
+        , system_prompt_pth = "DESAI-prompts.json"
 
-    PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompt_engineering"
+        , max_iter = DEFAULT_MAX_ITER
 
-    tools = str(PROMPTS_DIR)+"/"+tools
+        , chats_dir = None
 
-    system_prompt_pth=str(PROMPTS_DIR)+"/"+system_prompt_pth
+        , chat_id = None
+
+        , db_schema = None
+        , provider = "openrouter"):
+
+    # Chat logs: <chats_dir>/<chat_id>/turn*.json and <chats_dir>/<chat_id>.json;
+    # defaults: out/last_chats/ and a timestamp.
+    chats_dir = CHATS_OUT if chats_dir is None else os.path.join(chats_dir, "")
+
+    tools = resolve_prompt_path(tools)
+
+    system_prompt_pth = resolve_prompt_path(system_prompt_pth)
 
     with open(file=tools, mode="r", encoding="utf-8") as fp:
 
         tool_schemas = json.load(fp)
 
-    res_dest = CHATS_OUT+datetime.now().strftime("%Y%m%d_%H%M%S")
+    res_dest = chats_dir+(chat_id or datetime.now().strftime("%Y%m%d_%H%M%S"))
 
     result_log = res_dest+".json"
 
@@ -246,13 +353,18 @@ def api(user_problem
 
                             , res_dest=res_dest+"/"
 
-                            , model=model)
+                            , model=model
 
-    os.makedirs(CHATS_OUT,exist_ok=True)
+                            , max_iter=max_iter
+
+                            , db_schema=db_schema
+                            , provider=provider)
+
+    os.makedirs(chats_dir,exist_ok=True)
 
     with open(result_log, mode="w", encoding="utf-8") as fp:
 
-        json.dump({"messages":messages, "usages":usages[0]}, fp, default=str)
+        json.dump({"messages":messages, "usages":usages[0], "run_info":usages[2]}, fp, default=str)
 
     return rca, retrieved, usages, _conversation
 
@@ -260,7 +372,7 @@ def api(user_problem
 
 def log_message(conversationJSON, res_dest):
 
-    result_log = res_dest+"turn"+datetime.now().strftime("%Y%m%d_%H%M%S")+".json"
+    result_log = res_dest+"turn"+datetime.now().strftime("%Y%m%d_%H%M%S_%f")+".json"
 
     result_log = os.path.abspath(result_log)
 

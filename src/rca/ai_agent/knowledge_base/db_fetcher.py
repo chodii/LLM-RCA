@@ -14,7 +14,15 @@ import os
 
 import json
 
+import re
+
+import contextlib
+
+import contextvars
+
 import psycopg2
+
+from psycopg2 import sql
 
 from psycopg2.extras import RealDictCursor
 
@@ -28,7 +36,8 @@ import pytz
 
 DB_CONFIG = {
 
-    "host": "localhost",
+    # A directory (e.g. /var/run/postgresql) selects the Unix socket.
+    "host": os.environ.get("DESAI_DB_HOST", "localhost"),
 
     "port": 5432,
 
@@ -44,13 +53,13 @@ DB_CONFIG = {
 
 def get_wordsearch(pattern:str):
 
-    query=f"""
+    query="""
 
     SELECT id, source_path, chunk_id, content_json, time_start, time_end
 
     FROM log_chunks
 
-    WHERE content_text ILIKE '%{pattern}%'
+    WHERE content_text ILIKE %s
 
     ORDER BY time_start
 
@@ -62,7 +71,7 @@ def get_wordsearch(pattern:str):
 
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
 
-            cur.execute(query)
+            cur.execute(query, ("%"+escape_like(pattern)+"%",))
 
             return cur.fetchall()
 
@@ -112,11 +121,97 @@ def get_fuzzy_search(pattern: str, threshold: float = 0.15, limit: int = 10):
 
         
 
-def exec_query(query, values):
+# Minimum word_similarity() between the similarity_pattern and the best
+# matching extent of a chunk for the chunk to be returned. pg_trgm's own
+# default is 0.6; 0.4 tolerates small deviations (typos, partial tokens).
+# This is a tunable design parameter, not a validated optimum.
+WORD_SIMILARITY_THRESHOLD = 0.4
+
+# Hard cap on records per tool call (None = only the model-requested limit).
+MAX_LIMIT = None
+
+
+# similarity_pattern: "|", "," and ";" separate alternatives (boolean OR, as in
+# regex and keyword lists); spaces stay part of a phrase. A log phrase that
+# itself contains commas still ranks its own chunk first, since that chunk
+# matches every part. At most this many distinct alternatives are used per
+# call (bounded query cost).
+ALTERNATIVE_SEPARATORS = re.compile(r"[|,;]")
+
+MAX_ALTERNATIVES = 8
+
+
+def split_alternatives(pattern:str) -> list:
+
+    """'ERROR|DMI link, error' -> ['ERROR', 'DMI link'] (trimmed, deduplicated
+    case-insensitively, empty parts dropped, capped at MAX_ALTERNATIVES)."""
+
+    alternatives = []
+
+    seen = set()
+
+    for part in ALTERNATIVE_SEPARATORS.split(pattern):
+
+        part = part.strip()
+
+        if not part or part.lower() in seen:
+
+            continue
+
+        seen.add(part.lower())
+
+        alternatives.append(part)
+
+    return alternatives[:MAX_ALTERNATIVES]
+
+
+def escape_like(pattern:str) -> str:
+
+    """Escape LIKE/ILIKE wildcards so that the pattern is matched literally."""
+
+    return pattern.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+# Incident schema used by this thread/context (cached mode, see
+# db_loader.ensure_incident_schema); None = the shared public.log_chunks.
+CURRENT_SCHEMA = contextvars.ContextVar("desai_incident_schema", default=None)
+
+
+@contextlib.contextmanager
+def use_schema(schema):
+
+    token = CURRENT_SCHEMA.set(schema)
+
+    try:
+
+        yield schema
+
+    finally:
+
+        CURRENT_SCHEMA.reset(token)
+
+
+def exec_query(query, values, word_similarity_threshold=None):
 
     with psycopg2.connect(**DB_CONFIG) as conn:
 
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+
+            schema = CURRENT_SCHEMA.get()
+
+            if schema is not None:
+
+                # public stays on the path for pg_trgm's functions and operators.
+                cur.execute(sql.SQL("SET LOCAL search_path TO {}, public").format(sql.Identifier(schema)))
+
+            # Timestamps without an offset (e.g. from the model) are read as UTC,
+            # independently of the server's TimeZone setting.
+            cur.execute("SET LOCAL TIME ZONE 'UTC';")
+
+            if word_similarity_threshold is not None:
+                # Transaction-local setting used by the "<%" operator.
+                cur.execute("SELECT set_config('pg_trgm.word_similarity_threshold', %s, true);"
+                            , (str(word_similarity_threshold),))
 
             if len(values) == 0:
 
@@ -128,6 +223,117 @@ def exec_query(query, values):
 
             return cur.fetchall()
 
+
+
+# Two-stage search for several alternatives (word_similarity costs ~0.35 ms
+# per 2 kB chunk, so scoring every matching chunk of a large incident for
+# every alternative took tens of seconds):
+#   1. candidate pool = up to LITERAL_POOL chunks containing the most
+#      alternatives literally (cheap ILIKE), plus up to FUZZY_POOL fuzzy
+#      matches per alternative (index-supported "<%"; keeps typos and word
+#      variants reachable; first matches in load order, ORDER BY id);
+#   2. only the pool is scored and ranked.
+LITERAL_POOL = 100
+
+FUZZY_POOL = 30
+
+
+def _filters(source_path=None, start_ts=None, end_ts=None, exact_pattern=None):
+
+    """WHERE conditions shared by every branch of the alternatives query."""
+
+    clauses, values = [], []
+
+    if source_path is not None:
+
+        clauses.append("source_path = %s")
+
+        values.append(source_path)
+
+    if start_ts is not None or end_ts is not None:
+
+        clauses.append("has_time = True")
+
+        if start_ts is not None:
+
+            clauses.append("time_end >= %s")
+
+            values.append(start_ts)
+
+        if end_ts is not None:
+
+            clauses.append("time_start <= %s")
+
+            values.append(end_ts)
+
+    if exact_pattern is not None:
+
+        clauses.append("content_text ILIKE %s")
+
+        values.append("%"+escape_like(exact_pattern)+"%")
+
+    return (" AND ".join(clauses) if clauses else "TRUE"), values
+
+
+def get_alternatives(alternatives, source_path=None, start_ts=None, end_ts=None
+                     , exact_pattern=None, limit=1):
+
+    """OR of several similarity alternatives. A chunk matches if any
+    alternative reaches the word_similarity threshold; ranking: number of
+    matching alternatives, summed scores, best score (returned as sim)."""
+
+    where, fvalues = _filters(source_path, start_ts, end_ts, exact_pattern)
+
+    qv = []
+
+    likes = ["%"+escape_like(a)+"%" for a in alternatives]
+
+    literal = ("(SELECT id FROM log_chunks WHERE " + where
+               + " AND (" + " OR ".join(["content_text ILIKE %s"]*len(likes)) + ")"
+               + " ORDER BY (" + " + ".join(["(content_text ILIKE %s)::int"]*len(likes)) + ") DESC"
+               + ", time_start, source_path, chunk_id LIMIT %s)")
+
+    qv += fvalues + likes + likes + [LITERAL_POOL]
+
+    fuzzy = []
+
+    for a in alternatives:
+
+        # ORDER BY id = load order: identical in the shared table and the
+        # per-incident schemas (physical order depends on the table's history).
+        fuzzy.append("(SELECT id FROM log_chunks WHERE " + where + " AND %s <% content_text ORDER BY id LIMIT %s)")
+
+        qv += fvalues + [a, FUZZY_POOL]
+
+    scores = ["s%d" % i for i in range(len(alternatives))]
+
+    # Same comparison as "<%" (real >= the transaction-local threshold).
+    thr = "current_setting('pg_trgm.word_similarity_threshold')::real"
+
+    query = ("\n WITH pool AS (" + "\n UNION ".join([literal] + fuzzy) + ")"
+             + ",\n scored AS (SELECT c.source_path, c.chunk_id, c.content_json, c.time_start, "
+             + ", ".join("word_similarity(%%s, c.content_text) AS %s" % s for s in scores)
+             + " FROM log_chunks c JOIN pool USING (id))"
+             + "\n SELECT source_path, chunk_id, content_json, GREATEST(" + ", ".join(scores) + ") AS sim"
+             + " FROM scored WHERE " + " OR ".join("%s >= %s" % (s, thr) for s in scores)
+             + " ORDER BY (" + " + ".join("(%s >= %s)::int" % (s, thr) for s in scores) + ") DESC"
+             + ", (" + " + ".join(scores) + ") DESC, sim DESC, time_start, source_path, chunk_id"
+             + " LIMIT %s;")
+
+    qv += list(alternatives)
+
+    limit = 1 if limit is None else max(1, int(limit))
+
+    if MAX_LIMIT is not None:
+
+        limit = min(limit, MAX_LIMIT)
+
+    qv.append(limit)
+
+    # psycopg2 %-interpolation: literal "%" in "<%" must be doubled.
+    query = query.replace("<% content_text", "<%% content_text")
+
+    return exec_query(query, qv, word_similarity_threshold=WORD_SIMILARITY_THRESHOLD)
 
 
 def get_file_time_pattern(source_path:str=None
@@ -142,6 +348,58 @@ def get_file_time_pattern(source_path:str=None
 
                           , limit:int=1):
 
+    alternatives = split_alternatives(elastic_pattern) if elastic_pattern is not None else []
+
+    rows = _search(alternatives, source_path, start_ts, end_ts, exact_pattern, limit)
+
+    if not rows and any(len(a.split()) > 1 for a in alternatives):
+
+        # Keyword-bag fallback: a multi-word pattern that matched nothing as a
+        # phrase (e.g. "HMI Redundant Mode Active DMS1 blank reset") is retried
+        # once with its words as alternatives (most matching words first).
+        words = keyword_alternatives(alternatives)
+
+        if words and words != alternatives:
+
+            rows = _search(words, source_path, start_ts, end_ts, exact_pattern, limit)
+
+    return rows
+
+
+# Words too common/short to be useful as keyword alternatives.
+STOPWORDS = {"the", "and", "for", "with", "from", "after", "before", "upon", "into", "that", "this"
+             , "was", "were", "are", "has", "have", "had", "not", "but", "its", "via", "per", "any"
+             , "all", "out", "off", "then", "than", "when", "while", "during", "around", "about"}
+
+
+def keyword_alternatives(alternatives) -> list:
+
+    """Words of the alternatives (punctuation stripped, >= 3 characters, no
+    stopwords, deduplicated case-insensitively, at most MAX_ALTERNATIVES)."""
+
+    words, seen = [], set()
+
+    for alternative in alternatives:
+
+        for word in re.split(r"[\s/;:()\[\]\"']+", alternative):
+
+            word = word.strip(".,!?-_")
+
+            key = word.lower()
+
+            if len(word) < 3 or key in STOPWORDS or key in seen:
+
+                continue
+
+            seen.add(key)
+
+            words.append(word)
+
+    return words[:MAX_ALTERNATIVES]
+
+
+def _search(alternatives, source_path=None, start_ts=None, end_ts=None, exact_pattern=None, limit=1):
+
     qs = []
 
     qv = []
@@ -154,23 +412,33 @@ def get_file_time_pattern(source_path:str=None
 
     # SELECT id, source_path, chunk_id, content_json, time_start, time_end
 
-    qorder = " ORDER BY time_start"
+    qorder = " ORDER BY time_start, source_path, chunk_id"
 
-    if elastic_pattern is not None:
+    threshold = None
 
-        query += f", similarity(content_text, %s) AS sim"
+    if len(alternatives) > 1:
 
-        qv.append(elastic_pattern)
+        return get_alternatives(alternatives, source_path, start_ts, end_ts, exact_pattern, limit)
 
-        qs.append(f"similarity(content_text, %s) > %s")
+    if len(alternatives) == 1:
 
-        qv.append(elastic_pattern)
+        # word_similarity() scores the pattern against the best matching
+        # extent of the chunk. Whole-string similarity() is dominated by the
+        # chunk length (~2000 chars vs. a short pattern) and therefore ranks
+        # short chunks first regardless of whether they contain the pattern.
+        query += ", word_similarity(%s, content_text) AS sim"
 
-        qv.append(0.01)
+        qv.append(alternatives[0])
 
-        qorder = f" ORDER BY sim DESC"
+        # "<%" = word_similarity(pattern, content_text) >= threshold (GIN index
+        # supported). "%%" because psycopg2 uses %-style interpolation.
+        qs.append(" %s <%% content_text")
 
-        #qorder = "ORDER BY sim"
+        qv.append(alternatives[0])
+
+        threshold = WORD_SIMILARITY_THRESHOLD
+
+        qorder = " ORDER BY sim DESC, time_start, source_path, chunk_id"
 
     query += """
 
@@ -216,7 +484,7 @@ def get_file_time_pattern(source_path:str=None
 
         qs.append(" content_text ILIKE %s ")
 
-        qv.append(f"%{exact_pattern}%")
+        qv.append("%"+escape_like(exact_pattern)+"%")
 
         #qv.append(exact_pattern)
 
@@ -234,13 +502,19 @@ def get_file_time_pattern(source_path:str=None
 
     query += qorder
 
-    query += f" LIMIT {limit}"
+    query += " LIMIT %s"
+
+    limit = 1 if limit is None else max(1, int(limit))
+
+    if MAX_LIMIT is not None:
+
+        limit = min(limit, MAX_LIMIT)
+
+    qv.append(limit)
 
     query += ";"
 
-    
-
-    return exec_query(query, qv)
+    return exec_query(query, qv, word_similarity_threshold=threshold)
 
 
 
@@ -376,9 +650,9 @@ def pretty_print(row):
 
 
 
-    for ts, line in content:
+    for entry in content:
 
-        print(f"  {ts}  {line}")
+        print(f"  {entry[0]}  {entry[-1]}")
 
 
 

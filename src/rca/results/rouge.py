@@ -195,9 +195,9 @@ def calc_rouge_stats(outdir, rouge):
                     "Summaries": rouge[rouge_tag][pp]["Summarization"],
                     "Final output": rouge[rouge_tag][pp]["Final output"]
             }
-            log.plot_pcp(
-                lines = data
-                , axes = list(data.keys())
+            log.pcp(
+                a = data
+                #, axes = list(data.keys())
                 , normalize=False,
                 title=f"{rouge_tag.upper()} {pp} - reference RCA",
                 dest=outdir

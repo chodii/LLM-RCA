@@ -36,25 +36,38 @@ def standardize(prompt):
 
 def truncate_retrieved(manager):
 
-    if manager.last_calls == 0:
+    """Whole conversation, but only the most recent tool round keeps its tool
+    results. Older tool results are dropped and the tool_calls are stripped
+    from their assistant messages (their textual content - the "thoughts" -
+    is kept). Returns a new list; manager._messages is not modified."""
 
-        return
+    latest = set(manager._last_calls)
 
-    for i in range(manager.last_calls):
+    messages = []
 
-        calls = manager.messages.pop()
+    for ix, message in enumerate(manager._messages):
 
-        print("pop",calls["role"], len(calls), "-", str(calls["content"])[:200])
+        if ix in latest:
 
-    message = manager.messages.pop()
+            messages.append(message)
 
-    if "tool_calls" in message:
+            continue
 
-        message.pop("tool_calls")# remove all tool calls
+        if message.get("role") == "tool":
 
-    manager.messages.append(message)# keep at least track of thoughts
+            continue# older tool results are truncated
 
-    print("popop", len(manager.messages))
+        if "tool_calls" in message:
+
+            message = {k: v for k, v in message.items() if k != "tool_calls"}
+
+            if not message.get("content"):
+
+                continue# nothing left but an empty assistant turn
+
+        messages.append(message)
+
+    return messages
 
 
 
@@ -100,6 +113,11 @@ def summarize(manager:MessageManager):
 
     messages.append(manager.get_prompt(SUMMARIZATION_KEY))
 
+    # The caller must not offer tools in this turn: if the model answered the
+    # summary request with new tool calls, the current tool results would be
+    # discarded without ever being summarized.
+    manager.awaiting_summary = True
+
     return messages
 
     
@@ -108,13 +126,14 @@ def summarize(manager:MessageManager):
 
 def context_management_prompt(manager):
 
-    ...
+    raise NotImplementedError("CONTEXT_MANAGEMENT context strategy is not implemented; use SUMMARIZATION, TRUNCATION or NONE.")
 
 
 
 def foo_none(manager):
 
-    ...# by intention - do nothing
+    # by intention - no context management: the full conversation is sent
+    return list(manager._messages)
 
 
 
@@ -149,8 +168,6 @@ KEEP_ALL_CONTENT = True
 PERSERVE_REASONING = False
 
 class MessageManager:
-
-    _retrieved_from_chunks = []
 
     def __init__(self, db_manager
 
@@ -197,6 +214,17 @@ class MessageManager:
         self._messages = messages
 
         self._msg_ix_crucial = [ix for ix in range(len(messages)+1)]
+
+        # Per instance (formerly a class attribute shared by all incidents).
+        self._retrieved_from_chunks = []
+
+        # True while the pending model call is a summary request (no tools).
+        self.awaiting_summary = False
+
+        # Summary turns answered with tool calls anyway (calls were ignored).
+        self.summary_tool_call_violations = 0
+
+        self._rollback_len = len(self._messages)
 
         
 
@@ -282,7 +310,26 @@ class MessageManager:
 
         reasoning = assistant_message.get("reasoning",[])
 
-        
+        was_summary = self.awaiting_summary
+
+        self.awaiting_summary = False
+
+        if was_summary and tool_calls:
+
+            # Tools were not offered; executing these calls would replace the
+            # pending tool results before they were ever summarized.
+            self.summary_tool_call_violations += 1
+
+            print("\nWARNING: tool calls in a summary turn were ignored")
+
+            tool_calls = []
+
+            if not content:
+
+                # keep _last_calls so that the summary is requested again
+                self._check_budget()
+
+                return
 
         self._last_calls = []
 
@@ -308,13 +355,22 @@ class MessageManager:
 
                 name = call.get("function",{}).get("name", None)
 
-                if name is None:
+                if name == "record_selector":
 
-                    print("ERROR", call)
+                    try:
 
-                elif name == "record_selector":
+                        result = self.db_manager.dispatch_tool(call)
 
-                    result = self.db_manager.dispatch_tool(call)
+                        tool_content = json.dumps(result, default=str)
+
+                    except Exception as err:
+
+                        # every tool call must get a tool response
+                        print("\nTOOL ERROR", err)
+
+                        result = []
+
+                        tool_content = json.dumps({"error": str(err)})
 
                     self._last_calls.append(len(self._messages))# = the index of the next message
 
@@ -324,17 +380,29 @@ class MessageManager:
 
                         "tool_call_id": call["id"],
 
-                        #"content": json.dumps(result),
-
-                        "content": json.dumps(result, default=str),
-
-                        
+                        "content": tool_content,
 
                     })
 
                     self.retrieved_from_chunks(result)
 
-                elif name == "done":
+                elif name != "done":
+
+                    print("ERROR", call)
+
+                    self._last_calls.append(len(self._messages))
+
+                    self._messages.append({
+
+                        "role": "tool",
+
+                        "tool_call_id": call.get("id"),
+
+                        "content": json.dumps({"error": f"Unknown tool: {name}"}),
+
+                    })
+
+                else:
 
                     self.about_to_end = True
 
@@ -366,6 +434,10 @@ class MessageManager:
 
             })
 
+        self._check_budget()
+
+    def _check_budget(self):
+
         if (not self.force_end) and (self.iteration > self.max_iter):
 
             # the model has stopped tool calling
@@ -382,7 +454,18 @@ class MessageManager:
 
     
 
+    def rollback_turn(self):
+
+        """Undo what get_messages() appended (e.g. a summary request) after the
+        model call for this turn failed, so that the turn can be retried."""
+
+        del self._messages[self._rollback_len:]
+
+        self.awaiting_summary = False
+
     def get_messages(self):
+
+        self._rollback_len = len(self._messages)
 
         messages = self.context_composer(self)
 

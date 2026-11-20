@@ -20,11 +20,12 @@ def sub_evaluate_txt(inps, respect_ix):
             if i == respect_ix:
                 samp_bin.append(True)# always has been
                 continue
+            found = False
             for j in range(len(inps_prep[i])):
                 if sample in inps_prep[i][j]:
-                    samp_bin.append(True)
-            else:
-                samp_bin.append(False)
+                    found = True
+                    break
+            samp_bin.append(found)
         resp_inps.append(samp_bin)
         #print(samp_bin)
     return resp_inps

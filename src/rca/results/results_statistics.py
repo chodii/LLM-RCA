@@ -389,15 +389,23 @@ def get_results(root):
 from rca.results.rouge import rouge_analysis
 
 def main():
-    experiments = {
-        "Before PO": statist(get_results("out/chunked_3000_PO-before/")),
-        "Optimized": statist(get_results("out/chunked_3000_PO-after/")),
-        "Optimized + extended retrieval": statist(get_results("out/chunked_3000/")),
-    }
-    outdir="out/statistics/"
+    generate({
+        "Before PO": get_results("out/chunked_3000_PO-before/"),
+        "Optimized": get_results("out/chunked_3000_PO-after/"),
+        "Optimized + extended retrieval": get_results("out/chunked_3000/"),
+    }, outdir="out/statistics/")
+
+
+def generate(logger_paths, outdir, rouge_key=None):
+    """Thesis tables (stdout, LaTeX), box plots, radar chart, Wilcoxon bar
+    plots and ROUGE for {experiment name: [LOGGER.json paths]} (in order;
+    the last experiment gets the ROUGE analysis unless rouge_key is given)."""
+    outdir = os.path.join(outdir, "")
+    names = list(logger_paths)
+    experiments = {name: statist(logger_paths[name]) for name in names}
     os.makedirs(outdir, exist_ok=True)
     rouge_analysis(
-        get_results("out/chunked_3000/"),
+        logger_paths[rouge_key or names[-1]],
         dest=outdir
     )
     for name, experiment in experiments.items():
@@ -413,22 +421,18 @@ def main():
         labels.append(k)
         xb.pr.plot_radar_generic(dicts=dicts, labels=labels, title="Radar chart - "+k.replace("line2_exact", "grounded reference")+" (ref. RCA - line cnt.)", dest=outdir)
         
-    for k in experiments["Before PO"]:
+    for k in experiments[names[0]]:
         if k == "line_contained":# obsolete
             continue
         for aspect in ["line_count", "line_lengths"]:
             #print(aspect)
             for component in ["Retrieval", "Summarization", "Final output"]:
                 #print(component)
-                data = [
-                    get_sample_means(experiments["Before PO"], k, aspect, component),
-                    get_sample_means(experiments["Optimized"], k, aspect, component),
-                    get_sample_means(experiments["Optimized + extended retrieval"], k, aspect, component),
-                ]
+                data = [get_sample_means(experiments[name], k, aspect, component) for name in names]
                 plt.figure()
                 plt.boxplot(
                     data,
-                    tick_labels=["Before PO", "Optimized", "Optimized + extended retrieval"]
+                    tick_labels=names
                 )
                 plt.ylabel("Recall")
                 plt.title(f"{component} ({k.replace("line2_exact", "grounded reference")} {aspect.replace("_", " ")})")
